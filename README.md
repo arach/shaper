@@ -1,36 +1,77 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Shaper
 
-## Getting Started
+Interactive bezier curve editor for logo design. Load bezier path data from JSON, render on an SVG canvas overlaid on the original logo image, and edit curves interactively.
 
-First, run the development server:
+## Getting started
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
+pnpm install
 pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Features
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- **Bezier path editing** — Select, drag, and edit anchor points and control handles on cubic bezier curves
+- **Connected anchors** — Points within 2px across strokes are linked; moving one moves all connected points
+- **Smooth/corner points** — Alt+click to toggle; smooth points enforce symmetric handles
+- **Undo/redo** — Cmd+Z / Cmd+Shift+Z with 100-state snapshot history
+- **Auto-save** — Writes to disk via API route with 2-second debounce
+- **Re-trace from image** — Client-side pipeline: silhouette alpha channel → marching squares → RDP simplification → Schneider bezier fitting
+- **Pen tool** — Click to add new bezier segments
+- **Hand tool** — Pan with drag, scroll to zoom
+- **Layers panel** — Toggle visibility of paths, anchors, handles, labels, images, grid
+- **Point inspector** — View and edit X/Y coordinates numerically
+- **SVG console** — View and copy the full SVG path `d` attribute
+- **Minimap** — Overview with viewport indicator
+- **Export** — Download bezier data as JSON
 
-## Learn More
+## Keyboard shortcuts
 
-To learn more about Next.js, take a look at the following resources:
+| Key | Action |
+|-----|--------|
+| V | Select tool |
+| P | Pen tool |
+| H | Hand tool |
+| Space (hold) | Temporary hand tool |
+| Cmd+Z | Undo |
+| Cmd+Shift+Z | Redo |
+| Cmd+S | Save |
+| Alt+click | Toggle smooth/corner point |
+| Shift+drag | Move anchor without handles |
+| Backspace/Delete | Delete selected point |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Tech stack
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- [Next.js](https://nextjs.org) 16 (App Router)
+- [React](https://react.dev) 19
+- [Tailwind CSS](https://tailwindcss.com) v4
+- [TypeScript](https://www.typescriptlang.org) 5
+- [pnpm](https://pnpm.io)
 
-## Deploy on Vercel
+## Project structure
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```
+src/
+  app/
+    page.tsx              Main component (all UI, state, rendering)
+    api/save/route.ts     POST endpoint — writes JSON to public/
+  lib/
+    contour.ts            Marching squares, Otsu threshold, RDP simplification
+    bezier-fit.ts         Schneider's cubic bezier fitting algorithm
+public/
+    talkie-bezier.json    Bezier curve data (editable, auto-saved)
+    talkie-anchors.json   Named anchor points + cross-stroke junctions
+    talkie-smooth.json    Smooth/corner state per anchor
+    talkie-original.png   Original logo image (1024x1024)
+    talkie-silhouette.png Silhouette for re-tracing (RGBA, alpha = shape)
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Scripts
+
+```bash
+pnpm dev          # Start dev server
+pnpm build        # Production build (type-checks)
+pnpm lint         # ESLint
+```
