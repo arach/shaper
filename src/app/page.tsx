@@ -127,8 +127,9 @@ export default function ShapeShaper() {
   // Accordion state for sidebar sections (all open by default)
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     visibility: true, strokes: true, minimap: true,
-    selected: true, anchors: true, appearance: true, trace: true, info: true, actions: true,
+    selected: true, anchors: true, appearance: true, trace: true, info: true,
   });
+  const [showActionsMenu, setShowActionsMenu] = useState(false);
   const toggleSection = useCallback((id: string) => {
     setOpenSections(prev => ({ ...prev, [id]: !prev[id] }));
   }, []);
@@ -1171,6 +1172,35 @@ export default function ShapeShaper() {
     }
   }, [processImageFile]);
 
+  // Minimap click-to-navigate: click anywhere in minimap to center canvas on that point
+  const handleMinimapClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (!containerRef.current) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    // Map click position to 0..1024 canvas coordinates
+    // The minimap shows the full 1024x1024 canvas via object-contain in the container
+    const mapW = rect.width;
+    const mapH = rect.height;
+    // object-contain: fit 1024x1024 into mapW x mapH
+    const scale = Math.min(mapW / 1024, mapH / 1024);
+    const renderedW = 1024 * scale;
+    const renderedH = 1024 * scale;
+    const offsetX = (mapW - renderedW) / 2;
+    const offsetY = (mapH - renderedH) / 2;
+    const clickX = e.clientX - rect.left;
+    const clickY = e.clientY - rect.top;
+    const canvasX = (clickX - offsetX) / scale;
+    const canvasY = (clickY - offsetY) / scale;
+    // Clamp to canvas bounds
+    const cx = Math.max(0, Math.min(1024, canvasX));
+    const cy = Math.max(0, Math.min(1024, canvasY));
+    // Center the viewport on this canvas coordinate
+    const viewRect = containerRef.current.getBoundingClientRect();
+    setPan({
+      x: viewRect.width / 2 - cx * zoom,
+      y: viewRect.height / 2 - cy * zoom,
+    });
+  }, [zoom]);
+
   // Commands for CommandPalette
   const commands = useMemo<CommandOption[]>(() => [
     { id: "select-tool", label: "Tool: Select", action: () => switchTool("select"), shortcut: "V" },
@@ -1468,10 +1498,91 @@ export default function ShapeShaper() {
           title="Layers"
           isCollapsed={leftCollapsed}
           onToggleCollapse={() => setLeftCollapsed((v) => !v)}
+          headerActions={
+            <div className="relative">
+              <button
+                onClick={() => setShowActionsMenu(v => !v)}
+                className="p-1 hover:bg-white/10 rounded transition-colors text-neutral-500 hover:text-white"
+                title="Actions"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+              </button>
+              {showActionsMenu && (
+                <>
+                  <div className="fixed inset-0 z-50" onClick={() => setShowActionsMenu(false)} />
+                  <div className="absolute right-0 top-full mt-1 w-44 bg-black/95 backdrop-blur-xl border border-neutral-800 rounded-lg shadow-xl overflow-hidden z-50 animate-in fade-in slide-in-from-top-1 duration-100">
+                    <div className="py-1">
+                      <button onClick={() => { newProject(); setShowActionsMenu(false); }} className="w-full flex items-center gap-2.5 px-3 py-2 text-[11px] text-neutral-400 hover:bg-white/5 hover:text-white transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                        New Project
+                      </button>
+                      <button onClick={() => { quickSave(); confirmSound(); setShowActionsMenu(false); }} className="w-full flex items-center gap-2.5 px-3 py-2 text-[11px] text-neutral-400 hover:bg-white/5 hover:text-white transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></svg>
+                        Save
+                        <span className="ml-auto text-[9px] text-neutral-600 font-mono">Cmd+S</span>
+                      </button>
+                      <div className="h-px bg-neutral-800 my-1" />
+                      <button onClick={() => { handleRetrace(); setShowActionsMenu(false); }} disabled={isTracing} className={`w-full flex items-center gap-2.5 px-3 py-2 text-[11px] transition-colors ${isTracing ? 'text-purple-400' : 'text-neutral-400 hover:bg-white/5 hover:text-white'}`}>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+                        {isTracing ? "Tracing..." : "Re-trace"}
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          }
+          footer={
+            <div className="border-t border-neutral-800/50">
+              <div className="relative bg-neutral-950/50 cursor-crosshair" style={{ height: 120 }} onClick={handleMinimapClick}>
+                <div className="absolute inset-0 opacity-15 pointer-events-none" style={{ backgroundImage: 'radial-gradient(#444 1px, transparent 1px)', backgroundSize: '8px 8px' }} />
+                <img src={projectImage ? displayImageSrc : "/talkie-silhouette.png"} alt="" className="absolute inset-0 w-full h-full object-contain opacity-30 pointer-events-none" />
+                <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 1024 1024" preserveAspectRatio="xMidYMid meet">
+                  <path d={strokesPath} fill="none" stroke={pathColor} strokeWidth="8" />
+
+                </svg>
+                {/* Viewport rect as overlay div — using correct math */}
+                {containerRef.current && (() => {
+                  const vw = containerRef.current!.clientWidth;
+                  const vh = containerRef.current!.clientHeight;
+                  // The visible canvas area in canvas coords (0-1024)
+                  const visX = -pan.x / zoom + 512 - vw / 2 / zoom;
+                  const visY = -pan.y / zoom + 512 - vh / 2 / zoom;
+                  const visW = vw / zoom;
+                  const visH = vh / zoom;
+                  // Convert to percentage of 1024
+                  const pctX = (visX / 1024) * 100;
+                  const pctY = (visY / 1024) * 100;
+                  const pctW = (visW / 1024) * 100;
+                  const pctH = (visH / 1024) * 100;
+                  return (
+                    <div
+                      className="absolute border border-white/30 bg-white/5 pointer-events-none"
+                      style={{
+                        left: `${Math.max(0, pctX)}%`,
+                        top: `${Math.max(0, pctY)}%`,
+                        width: `${Math.min(100, pctW)}%`,
+                        height: `${Math.min(100, pctH)}%`,
+                        maxWidth: '100%',
+                        maxHeight: '100%',
+                      }}
+                    />
+                  );
+                })()}
+              </div>
+              <div className="flex items-center justify-between px-3 py-1.5 text-[10px] text-neutral-600 font-mono bg-neutral-900/30">
+                <span>{bezierData ? `${bezierData.strokes.reduce((s, st) => s + st.length, 0)} segments` : "0 segments"}</span>
+                <button onClick={resetZoom} className="flex items-center gap-1 px-1 py-0.5 rounded hover:bg-white/10 hover:text-white transition-colors" title="Fit to view">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" x2="14" y1="3" y2="10"/><line x1="3" x2="10" y1="21" y2="14"/></svg>
+                  <span className="text-[9px]">FIT</span>
+                </button>
+              </div>
+            </div>
+          }
         >
           {/* Visibility */}
           <div className="border-b border-neutral-800/50">
-            <button onClick={() => toggleSection("visibility")} className="w-full flex items-center gap-2 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-neutral-500 hover:text-neutral-300 hover:bg-white/5 transition-colors">
+            <button onClick={() => toggleSection("visibility")} className="w-full flex items-center gap-2 px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-neutral-500 hover:text-neutral-300 bg-neutral-900/30 hover:bg-neutral-900/50 transition-colors border-b border-transparent">
               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-neutral-600 shrink-0"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg>
               <span className="flex-1 text-left">Visibility</span>
               <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`text-neutral-600 transition-transform ${openSections.visibility ? 'rotate-0' : '-rotate-90'}`}><path d="m6 9 6 6 6-6"/></svg>
@@ -1487,16 +1598,21 @@ export default function ShapeShaper() {
                   { id: "showSilhouette", label: "Silhouette", checked: showSilhouette, setter: setShowSilhouette, icon: <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/></svg> },
                   { id: "showGrid", label: "Grid", checked: showGrid, setter: setShowGrid, icon: <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/><path d="M15 3v18"/></svg> },
                 ].map((item) => (
-                  <label key={item.id} className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-xs hover:bg-white/5 transition-colors">
-                    <input
-                      type="checkbox"
-                      checked={item.checked}
-                      onChange={(e) => item.setter(e.target.checked)}
-                      className="rounded bg-neutral-800 accent-blue-500"
-                    />
-                    <span className="text-neutral-600">{item.icon}</span>
-                    <span className="text-neutral-400">{item.label}</span>
-                  </label>
+                  <button
+                    key={item.id}
+                    onClick={() => item.setter(!item.checked)}
+                    className="w-full flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-xs hover:bg-white/5 transition-colors ml-2"
+                  >
+                    <span className={item.checked ? "text-neutral-500" : "text-neutral-700"}>{item.icon}</span>
+                    <span className={`flex-1 text-left ${item.checked ? "text-neutral-400" : "text-neutral-600"}`}>{item.label}</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 transition-colors ${item.checked ? "text-neutral-400" : "text-neutral-700"}`}>
+                      {item.checked ? (
+                        <><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></>
+                      ) : (
+                        <><path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/></>
+                      )}
+                    </svg>
+                  </button>
                 ))}
               </div>
             )}
@@ -1504,7 +1620,7 @@ export default function ShapeShaper() {
 
           {/* Strokes */}
           <div className="border-b border-neutral-800/50">
-            <button onClick={() => toggleSection("strokes")} className="w-full flex items-center gap-2 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-neutral-500 hover:text-neutral-300 hover:bg-white/5 transition-colors">
+            <button onClick={() => toggleSection("strokes")} className="w-full flex items-center gap-2 px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-neutral-500 hover:text-neutral-300 bg-neutral-900/30 hover:bg-neutral-900/50 transition-colors">
               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-neutral-600 shrink-0"><path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z"/><path d="m14.5 12.5 2-2"/></svg>
               <span className="flex-1 text-left">Strokes</span>
               <span className="text-[9px] text-neutral-600 font-normal">{strokeGroups.length}</span>
@@ -1513,7 +1629,7 @@ export default function ShapeShaper() {
             {openSections.strokes && (
               <div className="px-3 pb-3 space-y-0.5">
                 {strokeGroups.map(([name, anchors]) => (
-                  <div key={name} className="flex items-center gap-2 rounded px-1.5 py-1 text-xs hover:bg-white/5 transition-colors">
+                  <div key={name} className="flex items-center gap-2 rounded px-2 py-1 text-xs hover:bg-white/5 transition-colors ml-2">
                     <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: strokeColors[name] || "#888" }} />
                     <span className="text-neutral-400 flex-1">{name}</span>
                     <span className="text-neutral-600 text-[10px]">{anchors.length}</span>
@@ -1523,75 +1639,7 @@ export default function ShapeShaper() {
             )}
           </div>
 
-          {/* Actions */}
-          <div className="border-b border-neutral-800/50">
-            <button onClick={() => toggleSection("actions")} className="w-full flex items-center gap-2 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-neutral-500 hover:text-neutral-300 hover:bg-white/5 transition-colors">
-              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-neutral-600 shrink-0"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-              <span className="flex-1 text-left">Actions</span>
-              <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`text-neutral-600 transition-transform ${openSections.actions ? 'rotate-0' : '-rotate-90'}`}><path d="m6 9 6 6 6-6"/></svg>
-            </button>
-            {openSections.actions && (
-              <div className="px-3 pb-3 space-y-1">
-                <button onClick={newProject} className="w-full flex items-center gap-2 rounded px-1.5 py-1.5 text-xs text-neutral-400 hover:bg-white/5 hover:text-neutral-200 transition-colors">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
-                  New Project
-                </button>
-                <button onClick={() => { quickSave(); confirmSound(); }} className="w-full flex items-center gap-2 rounded px-1.5 py-1.5 text-xs text-neutral-400 hover:bg-white/5 hover:text-neutral-200 transition-colors">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></svg>
-                  Save
-                </button>
-                <button onClick={downloadJson} className="w-full flex items-center gap-2 rounded px-1.5 py-1.5 text-xs text-neutral-400 hover:bg-white/5 hover:text-neutral-200 transition-colors">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
-                  Export JSON
-                </button>
-                <button onClick={handleRetrace} disabled={isTracing} className={`w-full flex items-center gap-2 rounded px-1.5 py-1.5 text-xs transition-colors ${isTracing ? 'text-purple-400 bg-purple-600/10' : 'text-neutral-400 hover:bg-white/5 hover:text-neutral-200'}`}>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
-                  {isTracing ? "Tracing..." : "Re-trace"}
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Minimap */}
-          <div className="border-b border-neutral-800/50">
-            <button onClick={() => toggleSection("minimap")} className="w-full flex items-center gap-2 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-neutral-500 hover:text-neutral-300 hover:bg-white/5 transition-colors">
-              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-neutral-600 shrink-0"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/><line x1="9" x2="9" y1="3" y2="18"/><line x1="15" x2="15" y1="6" y2="21"/></svg>
-              <span className="flex-1 text-left">Minimap</span>
-              <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`text-neutral-600 transition-transform ${openSections.minimap ? 'rotate-0' : '-rotate-90'}`}><path d="m6 9 6 6 6-6"/></svg>
-            </button>
-            {openSections.minimap && (
-              <div className="px-3 pb-3">
-                <div className="relative h-[140px] bg-neutral-950 rounded overflow-hidden border border-neutral-800/50">
-                  <div className="absolute inset-0 opacity-20" style={{ backgroundImage: 'radial-gradient(#444 1px, transparent 1px)', backgroundSize: '10px 10px' }} />
-                  <img src={projectImage ? displayImageSrc : "/talkie-silhouette.png"} alt="" className="absolute inset-0 w-full h-full object-contain opacity-30" />
-                  <svg className="absolute inset-0 w-full h-full" viewBox="0 0 1024 1024" preserveAspectRatio="xMidYMid meet">
-                    <path d={strokesPath} fill="none" stroke={pathColor} strokeWidth="8" />
-                  </svg>
-                  <div
-                    className="absolute border-2 border-white/40 shadow-[0_0_20px_rgba(255,255,255,0.1)] bg-white/5"
-                    style={{
-                      left: `${50 - (512 - pan.x) / 1024 / zoom * 50}%`,
-                      top: `${50 - (512 - pan.y) / 1024 / zoom * 50}%`,
-                      width: `${100 / zoom}%`,
-                      height: `${100 / zoom}%`,
-                      transform: "translate(-50%, -50%)",
-                      maxWidth: "100%",
-                      maxHeight: "100%",
-                    }}
-                  >
-                    <div className="absolute top-0 right-0 -mt-3 text-[8px] text-white/50 font-mono pointer-events-none select-none">VIEW</div>
-                  </div>
-                </div>
-                <div className="flex items-center justify-between mt-1.5 text-[10px] text-neutral-600 font-mono">
-                  <span>{bezierData ? `${bezierData.strokes.reduce((s, st) => s + st.length, 0)} segments` : "0 segments"}</span>
-                  <button onClick={resetZoom} className="flex items-center gap-1 px-1 py-0.5 rounded hover:bg-white/10 hover:text-white transition-colors" title="Reset zoom to fit">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" x2="14" y1="3" y2="10"/><line x1="3" x2="10" y1="21" y2="14"/></svg>
-                    <span className="text-[9px]">FIT</span>
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
+          
         </SidePanel>
       )}
 
@@ -1606,7 +1654,7 @@ export default function ShapeShaper() {
           {/* Selected Point */}
           {selectedPointData && (
             <div className="border-b border-neutral-800/50">
-              <button onClick={() => toggleSection("selected")} className="w-full flex items-center gap-2 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-neutral-500 hover:text-neutral-300 hover:bg-white/5 transition-colors">
+              <button onClick={() => toggleSection("selected")} className="w-full flex items-center gap-2 px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-neutral-500 hover:text-neutral-300 bg-neutral-900/30 hover:bg-neutral-900/50 transition-colors">
                 <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-400 shrink-0"><circle cx="12" cy="12" r="3"/><path d="M12 2v4"/><path d="M12 18v4"/><path d="m4.93 4.93 2.83 2.83"/><path d="m16.24 16.24 2.83 2.83"/><path d="M2 12h4"/><path d="M18 12h4"/><path d="m4.93 19.07 2.83-2.83"/><path d="m16.24 7.76 2.83-2.83"/></svg>
                 <span className="flex-1 text-left">Selected Point</span>
                 <div className="flex items-center gap-1">
@@ -1616,7 +1664,7 @@ export default function ShapeShaper() {
                 <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`text-neutral-600 transition-transform ${openSections.selected ? 'rotate-0' : '-rotate-90'}`}><path d="m6 9 6 6 6-6"/></svg>
               </button>
               {openSections.selected && (
-                <div className="px-3 pb-3 space-y-1.5">
+                <div className="px-3 pb-3 space-y-1.5 ml-2">
                   <div className="flex items-center gap-1.5">
                     <span className={`inline-block h-2 w-2 rounded-full ${
                       selectedPointData.pointType === "p0" || selectedPointData.pointType === "p3" ? "bg-red-500" : "bg-blue-400"
@@ -1642,18 +1690,18 @@ export default function ShapeShaper() {
 
           {/* Anchors */}
           <div className="border-b border-neutral-800/50">
-            <button onClick={() => toggleSection("anchors")} className="w-full flex items-center gap-2 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-neutral-500 hover:text-neutral-300 hover:bg-white/5 transition-colors">
+            <button onClick={() => toggleSection("anchors")} className="w-full flex items-center gap-2 px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-neutral-500 hover:text-neutral-300 bg-neutral-900/30 hover:bg-neutral-900/50 transition-colors">
               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-neutral-600 shrink-0"><circle cx="12" cy="5" r="3"/><line x1="12" x2="12" y1="22" y2="8"/><path d="M5 12H2a10 10 0 0 0 20 0h-3"/></svg>
               <span className="flex-1 text-left">Anchors</span>
               <span className="text-[9px] text-neutral-600 font-normal">{anchorsData?.anchors.length ?? 0}</span>
               <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`text-neutral-600 transition-transform ${openSections.anchors ? 'rotate-0' : '-rotate-90'}`}><path d="m6 9 6 6 6-6"/></svg>
             </button>
             {openSections.anchors && (
-              <div className="px-3 pb-3 max-h-48 overflow-y-auto space-y-0.5">
+              <div className="px-3 pb-3 max-h-48 overflow-y-auto space-y-0.5 frame-scrollbar">
                 {anchorsData?.anchors.map((anchor, i) => {
                   const isNearSelected = selectedPointData && Math.hypot(selectedPointData.x - anchor.x, selectedPointData.y - anchor.y) < 10;
                   return (
-                    <div key={i} className="flex items-center gap-1">
+                    <div key={i} className="flex items-center gap-1 ml-2">
                       <button
                         onClick={() => selectAnchorByName(anchor)}
                         className={`flex flex-1 items-center justify-between rounded px-1.5 py-1 text-xs text-left transition-colors ${
@@ -1675,13 +1723,13 @@ export default function ShapeShaper() {
 
           {/* Appearance */}
           <div className="border-b border-neutral-800/50">
-            <button onClick={() => toggleSection("appearance")} className="w-full flex items-center gap-2 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-neutral-500 hover:text-neutral-300 hover:bg-white/5 transition-colors">
+            <button onClick={() => toggleSection("appearance")} className="w-full flex items-center gap-2 px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-neutral-500 hover:text-neutral-300 bg-neutral-900/30 hover:bg-neutral-900/50 transition-colors">
               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-neutral-600 shrink-0"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg>
               <span className="flex-1 text-left">Appearance</span>
               <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`text-neutral-600 transition-transform ${openSections.appearance ? 'rotate-0' : '-rotate-90'}`}><path d="m6 9 6 6 6-6"/></svg>
             </button>
             {openSections.appearance && (
-              <div className="px-3 pb-3 space-y-2">
+              <div className="px-3 pb-3 space-y-2 ml-2">
                 <div className="flex items-center gap-2">
                   <input type="color" value={pathColor} onChange={(e) => setPathColor(e.target.value)} className="h-6 w-6 cursor-pointer rounded border border-neutral-700 bg-transparent p-0" />
                   <span className="font-mono text-xs text-neutral-400">{pathColor}</span>
@@ -1697,14 +1745,14 @@ export default function ShapeShaper() {
 
           {/* Trace Settings */}
           <div className="border-b border-neutral-800/50">
-            <button onClick={() => toggleSection("trace")} className="w-full flex items-center gap-2 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-neutral-500 hover:text-neutral-300 hover:bg-white/5 transition-colors">
+            <button onClick={() => toggleSection("trace")} className="w-full flex items-center gap-2 px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-neutral-500 hover:text-neutral-300 bg-neutral-900/30 hover:bg-neutral-900/50 transition-colors">
               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-neutral-600 shrink-0"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
               <span className="flex-1 text-left">Trace Settings</span>
               <span className="text-[9px] text-neutral-600 font-normal tabular-nums">{traceError}</span>
               <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`text-neutral-600 transition-transform ${openSections.trace ? 'rotate-0' : '-rotate-90'}`}><path d="m6 9 6 6 6-6"/></svg>
             </button>
             {openSections.trace && (
-              <div className="px-3 pb-3 space-y-1.5">
+              <div className="px-3 pb-3 space-y-1.5 ml-2">
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-neutral-500">Error tolerance</span>
                   <span className="font-mono text-xs text-neutral-400 tabular-nums">{traceError}</span>
@@ -1716,13 +1764,13 @@ export default function ShapeShaper() {
 
           {/* Info */}
           <div>
-            <button onClick={() => toggleSection("info")} className="w-full flex items-center gap-2 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-neutral-500 hover:text-neutral-300 hover:bg-white/5 transition-colors">
+            <button onClick={() => toggleSection("info")} className="w-full flex items-center gap-2 px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-neutral-500 hover:text-neutral-300 bg-neutral-900/30 hover:bg-neutral-900/50 transition-colors">
               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-neutral-600 shrink-0"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
               <span className="flex-1 text-left">Info</span>
               <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`text-neutral-600 transition-transform ${openSections.info ? 'rotate-0' : '-rotate-90'}`}><path d="m6 9 6 6 6-6"/></svg>
             </button>
             {openSections.info && (
-              <div className="px-3 pb-3 space-y-1 text-xs">
+              <div className="px-3 pb-3 space-y-1 text-xs ml-2">
                 <div className="flex justify-between rounded px-1.5 py-0.5"><span className="text-neutral-500">Canvas</span><span className="text-neutral-400 tabular-nums">1024 x 1024</span></div>
                 <div className="flex justify-between rounded px-1.5 py-0.5"><span className="text-neutral-500">Segments</span><span className="text-neutral-400 tabular-nums">{bezierData?.strokes.reduce((sum, s) => sum + s.length, 0) || 0}</span></div>
                 <div className="flex justify-between rounded px-1.5 py-0.5"><span className="text-neutral-500">Strokes</span><span className="text-neutral-400 tabular-nums">{bezierData?.strokes.length || 0}</span></div>
@@ -1771,6 +1819,16 @@ export default function ShapeShaper() {
           onOpenCommandPalette={() => { setIsCmdPaletteOpen(true); pop(); }}
           onToggleTerminal={() => { setIsTerminalOpen(v => !v); isTerminalOpen ? slideOut() : slideIn(); }}
           isTerminalOpen={isTerminalOpen}
+          extraControls={
+            <button
+              onClick={downloadJson}
+              className="flex items-center gap-1.5 text-neutral-500 hover:text-white transition-colors"
+              title="Export JSON"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+              <span className="text-[9px]">Export</span>
+            </button>
+          }
         />
       )}
 

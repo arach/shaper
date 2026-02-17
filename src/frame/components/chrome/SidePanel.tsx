@@ -9,11 +9,13 @@ interface SidePanelProps {
   onToggleCollapse?: () => void;
   /** Additional header actions (right of title) */
   headerActions?: React.ReactNode;
+  /** Footer content pinned to bottom (outside scroll area) */
+  footer?: React.ReactNode;
   children: React.ReactNode;
 }
 
 const SidePanel: React.FC<SidePanelProps> = ({
-  side, title, isCollapsed = false, onToggleCollapse, headerActions, children
+  side, title, isCollapsed = false, onToggleCollapse, headerActions, footer, children
 }) => {
   if (isCollapsed) return null;
 
@@ -51,9 +53,16 @@ const SidePanel: React.FC<SidePanelProps> = ({
         )}
 
         {/* Scrollable content */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto frame-scrollbar">
           {children}
         </div>
+
+        {/* Footer — pinned to bottom */}
+        {footer && (
+          <div className="shrink-0">
+            {footer}
+          </div>
+        )}
       </div>
     </div>
   );
