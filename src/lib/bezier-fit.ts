@@ -3,7 +3,11 @@
  * Ported from talkie/scripts/fit_bowtie_bezier.py
  */
 
-import { loadImageData, imageToMask, marchingSquares, rdp } from "./contour";
+import {
+  loadImageData, imageToMask, marchingSquares, marchingSquaresMulti, rdp,
+  analyzeImage, cannyEdgeDetection,
+  type ImageAnalysis,
+} from "./contour";
 
 type Pt = [number, number];
 type BezierCtrl = [Pt, Pt, Pt, Pt]; // [p0, c1, c2, p3]
@@ -228,46 +232,129 @@ function toSegments(ctrls: BezierCtrl[]): BezierSegment[] {
 }
 
 /**
- * Main entry point: trace contour from silhouette image and fit bezier curves.
- * Returns BezierSegment[][] (array of strokes, typically one stroke for the outer contour).
+ * Main entry point: trace contour from image and fit bezier curves.
+ * Automatically detects image type and adapts the extraction pipeline:
+ *   - alpha/logo: threshold mask → single contour → bezier fit
+ *   - illustration: threshold mask → multiple contours → bezier fit per contour
+ *   - photo: Canny edge detection → multiple contours → bezier fit per contour
  *
- * @param src - URL/path of the silhouette PNG
- * @param errorTolerance - bezier fitting error tolerance (lower = more segments, tighter fit)
- * @param resolution - resolution to trace at (default 512, matching Python pipeline)
+ * @param src - URL/path of the image
+ * @param errorTolerance - bezier fitting error (lower = more detail)
+ * @param resolution - trace resolution (default auto-selected based on image type)
  */
 export async function traceFromImage(
   src: string,
   errorTolerance: number,
-  resolution: number = 512
+  resolution?: number,
 ): Promise<BezierSegment[][]> {
-  // 1. Load image at trace resolution
-  const imageData = await loadImageData(src, resolution);
-  console.log("[trace] loaded image", resolution, "x", resolution);
+  // 1. Analyze at a small size first
+  const previewData = await loadImageData(src, 256);
+  const analysis: ImageAnalysis = analyzeImage(previewData);
 
-  // 2. Threshold to binary mask
+  // 2. Pick trace resolution based on image type
+  const traceRes = resolution ?? (
+    analysis.kind === "photo" ? 640 :
+    analysis.kind === "illustration" ? 512 :
+    512
+  );
+
+  // 3. Load at trace resolution
+  const imageData = await loadImageData(src, traceRes);
+  console.log("[trace] loaded image", traceRes, "x", traceRes, "kind:", analysis.kind);
+
+  const scale = 1024 / traceRes;
+
+  // 4. Choose extraction strategy
+  if (analysis.kind === "alpha" || analysis.kind === "logo") {
+    // Classic pipeline: threshold → single/few contours
+    return traceMask(imageData, traceRes, scale, errorTolerance, analysis.kind === "logo" ? 3 : 1);
+  }
+
+  if (analysis.kind === "illustration") {
+    // Threshold for main shapes + edges for details
+    const maskStrokes = await traceMask(imageData, traceRes, scale, errorTolerance, 5);
+    return maskStrokes;
+  }
+
+  // Photo: use Canny edge detection
+  return traceEdges(imageData, traceRes, scale, errorTolerance, analysis);
+}
+
+/** Threshold-based extraction (logos, alpha, illustrations) */
+function traceMask(
+  imageData: ImageData,
+  traceRes: number,
+  scale: number,
+  errorTolerance: number,
+  maxContours: number,
+): BezierSegment[][] {
   const mask = imageToMask(imageData);
   const onCount = mask.filter(Boolean).length;
-  console.log("[trace] mask: ", onCount, "foreground pixels of", mask.length);
+  console.log("[trace:mask]", onCount, "foreground pixels of", mask.length);
 
-  // 3. Marching squares contour extraction
-  const contour = marchingSquares(mask, resolution, resolution);
-  console.log("[trace] contour:", contour.length, "points");
-  if (contour.length === 0) return [];
+  if (maxContours <= 1) {
+    const contour = marchingSquares(mask, traceRes, traceRes);
+    if (contour.length === 0) return [];
+    return [fitContour(contour, scale, errorTolerance)].filter((s) => s.length > 0);
+  }
 
-  // 4. Scale contour from trace resolution to 1024 canvas
-  const scale = 1024 / resolution;
+  // Min length scales with resolution — filter out noise
+  const minLen = Math.max(20, traceRes * 0.04);
+  const contours = marchingSquaresMulti(mask, traceRes, traceRes, maxContours, minLen);
+  console.log("[trace:mask]", contours.length, "contours extracted");
+
+  const strokes: BezierSegment[][] = [];
+  for (const contour of contours) {
+    const stroke = fitContour(contour, scale, errorTolerance);
+    if (stroke.length > 0) strokes.push(stroke);
+  }
+  return strokes;
+}
+
+/** Edge-detection extraction (photos) */
+function traceEdges(
+  imageData: ImageData,
+  traceRes: number,
+  scale: number,
+  errorTolerance: number,
+  analysis: ImageAnalysis,
+): BezierSegment[][] {
+  const { recommendedSigma, recommendedLow, recommendedHigh } = analysis;
+
+  const edgeMask = cannyEdgeDetection(imageData, recommendedSigma, recommendedLow, recommendedHigh);
+  const edgeCount = edgeMask.filter(Boolean).length;
+  console.log("[trace:edges]", edgeCount, "edge pixels");
+
+  if (edgeCount === 0) return [];
+
+  // Dynamic contour count: more edges → allow more contours, but cap it
+  const maxContours = Math.min(30, Math.max(5, Math.round(edgeCount / (traceRes * 2))));
+  // Dynamic min length: larger images get a higher threshold
+  const minLen = Math.max(15, traceRes * 0.03);
+
+  const contours = marchingSquaresMulti(edgeMask, traceRes, traceRes, maxContours, minLen);
+  console.log("[trace:edges]", contours.length, "contours from edges, maxContours:", maxContours);
+
+  // For photos, use a slightly higher tolerance to keep curves smooth
+  const photoTolerance = Math.max(errorTolerance, errorTolerance * 1.2);
+
+  const strokes: BezierSegment[][] = [];
+  for (const contour of contours) {
+    const stroke = fitContour(contour, scale, photoTolerance);
+    if (stroke.length > 0) strokes.push(stroke);
+  }
+  return strokes;
+}
+
+/** Fit bezier curves to a single contour polyline, scaled to canvas */
+function fitContour(contour: Pt[], scale: number, errorTolerance: number): BezierSegment[] {
   const scaled: Pt[] = contour.map(([x, y]) => [x * scale, y * scale]);
 
-  // 5. RDP simplification (light pass to remove noise before fitting)
   const simplified = rdp(scaled, errorTolerance * 0.5);
-  console.log("[trace] simplified:", simplified.length, "points");
   if (simplified.length < 2) return [];
 
-  // 6. Fit cubic beziers
   const fitted = fitCurve(simplified, errorTolerance);
-  console.log("[trace] fitted:", fitted.length, "bezier segments");
   if (fitted.length === 0) return [];
 
-  // 7. Convert to BezierSegment format, return as single stroke
-  return [toSegments(fitted)];
+  return toSegments(fitted);
 }

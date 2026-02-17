@@ -37,6 +37,7 @@ Single-page Next.js 16 app (App Router) with one main component and two library 
 - **Auto-save**: 2-second debounce writes to disk via `/api/save`. No localStorage.
 - **Undo/redo**: JSON snapshot history (max 100 states), 300ms debounce.
 - **Re-trace**: Client-side pipeline: load silhouette → alpha-channel mask → marching squares → RDP → Schneider bezier fit. The silhouette uses RGBA where opaque pixels = foreground (not RGB luminance).
+- **Image drop zone**: Drag-and-drop (or click-to-browse) any logo image to start a new project. Two-stage flow: drop image → preview with specs/warnings + error tolerance slider → "Extract Shapes" runs the trace pipeline. Supports PNG, SVG, JPEG, WebP. Validates dimensions and warns about non-square, too-small, or too-large images. PNGs use alpha channel; JPEGs fall back to Otsu threshold.
 
 ## Conventions
 
