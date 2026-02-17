@@ -1,17 +1,15 @@
 import React from 'react';
-import { Search, Terminal } from 'lucide-react';
+import { Search } from 'lucide-react';
 import { PANEL_STYLES } from '../../lib/chrome';
 
 interface CommandDockProps {
   onOpenCommandPalette: () => void;
-  onToggleTerminal: () => void;
-  isTerminalOpen: boolean;
-  /** Additional toggle buttons */
+  /** Additional toggle buttons rendered after the CMD+K trigger */
   extraControls?: React.ReactNode;
 }
 
 const CommandDock: React.FC<CommandDockProps> = ({
-  onOpenCommandPalette, onToggleTerminal, isTerminalOpen, extraControls
+  onOpenCommandPalette, extraControls
 }) => {
   return (
     <div className={`${PANEL_STYLES.commandDock} pointer-events-auto`}>
@@ -24,18 +22,11 @@ const CommandDock: React.FC<CommandDockProps> = ({
           <span className="text-[9px]">CMD+K</span>
         </button>
 
-        <div className="flex items-center gap-3">
-          {extraControls}
-          <button
-            onClick={onToggleTerminal}
-            className={`flex items-center justify-center transition-colors ${
-              isTerminalOpen ? 'text-white' : 'text-neutral-500 hover:text-white'
-            }`}
-            title="Toggle Terminal"
-          >
-            <Terminal size={12} />
-          </button>
-        </div>
+        {extraControls && (
+          <div className="flex items-center gap-3">
+            {extraControls}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -130,6 +130,8 @@ export default function ShapeShaper() {
     selected: true, anchors: true, appearance: true, trace: true, info: true,
   });
   const [showActionsMenu, setShowActionsMenu] = useState(false);
+  const [showGuides, setShowGuides] = useState(true);
+  const [mousePos, setMousePos] = useState<{ screen: { x: number; y: number }; canvas: { x: number; y: number } } | null>(null);
   const toggleSection = useCallback((id: string) => {
     setOpenSections(prev => ({ ...prev, [id]: !prev[id] }));
   }, []);
@@ -746,6 +748,10 @@ export default function ShapeShaper() {
         finishPenStroke();
         return;
       }
+      if (isMod && e.key === "\\") {
+        e.preventDefault();
+        setShowGuides(prev => !prev);
+      }
       if (e.key === "v" || e.key === "V") switchTool("select");
       if (e.key === "p" || e.key === "P") switchTool("pen");
       if (e.key === "h" || e.key === "H") switchTool("hand");
@@ -889,6 +895,15 @@ export default function ShapeShaper() {
   }, [tool, getCanvasCoords, findNearestPoint, pan, penStrokeIndex, penLastPoint]);
 
   const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
+    // Track mouse position for crosshair guides
+    if (containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      const screenX = e.clientX - rect.left;
+      const screenY = e.clientY - rect.top;
+      const coords = getCanvasCoords(e);
+      setMousePos({ screen: { x: screenX, y: screenY }, canvas: { x: coords.x, y: coords.y } });
+    }
+
     // Update pen preview position
     if (tool === "pen") {
       const coords = getCanvasCoords(e);
@@ -1222,6 +1237,7 @@ export default function ShapeShaper() {
     { id: "toggle-original", label: `${showOriginal ? "Hide" : "Show"} Original Image`, action: () => setShowOriginal(v => !v) },
     { id: "toggle-silhouette", label: `${showSilhouette ? "Hide" : "Show"} Silhouette`, action: () => setShowSilhouette(v => !v) },
     { id: "toggle-grid", label: `${showGrid ? "Hide" : "Show"} Grid`, action: () => setShowGrid(v => !v) },
+    { id: "toggle-guides", label: `${showGuides ? "Hide" : "Show"} Crosshair Guides`, action: () => setShowGuides(v => !v), shortcut: "Cmd+\\" },
     { id: "toggle-terminal", label: `${isTerminalOpen ? "Close" : "Open"} Terminal`, action: () => { setIsTerminalOpen(v => !v); isTerminalOpen ? slideOut() : slideIn(); } },
     { id: "toggle-left-panel", label: `${leftCollapsed ? "Show" : "Hide"} Layers Panel`, action: () => setLeftCollapsed(v => !v) },
     { id: "toggle-right-panel", label: `${rightCollapsed ? "Show" : "Hide"} Inspector Panel`, action: () => setRightCollapsed(v => !v) },
@@ -1229,7 +1245,7 @@ export default function ShapeShaper() {
       { id: "delete-point", label: "Delete Selected Point", action: deleteSelectedPoint, shortcut: "Backspace" },
       { id: "focus-point", label: "Focus on Selected Point", action: focusOnSelected },
     ] : []),
-  ], [switchTool, undo, redo, quickSave, downloadJson, handleRetrace, newProject, resetZoom, zoomIn, zoomOut, showPath, showAnchors, showHandles, showLabels, showOriginal, showSilhouette, showGrid, isTerminalOpen, leftCollapsed, rightCollapsed, selectedPoint, deleteSelectedPoint, focusOnSelected]);
+  ], [switchTool, undo, redo, quickSave, downloadJson, handleRetrace, newProject, resetZoom, zoomIn, zoomOut, showPath, showAnchors, showHandles, showLabels, showOriginal, showSilhouette, showGrid, showGuides, isTerminalOpen, leftCollapsed, rightCollapsed, selectedPoint, deleteSelectedPoint, focusOnSelected]);
 
   const showEditor = !isInitialLoad && !showDropZone && (bezierData || projectImage);
   const showDropScreen = !isInitialLoad && (showDropZone || (!bezierData && !projectImage));
@@ -1257,14 +1273,15 @@ export default function ShapeShaper() {
           ref={containerRef}
           className={`absolute inset-0 ${tool === "pen" ? "cursor-crosshair" : ""} ${(tool === "hand" || isPanning) ? "cursor-grab" : ""} ${isPanning ? "!cursor-grabbing" : ""}`}
           style={{
-            background: `radial-gradient(circle, ${showGrid ? '#333' : '#1a1a1a'} 1px, transparent 1px), #0a0a0a`,
+            backgroundColor: "#0a0a0a",
+            backgroundImage: `radial-gradient(circle, ${showGrid ? '#333' : '#1a1a1a'} 1px, transparent 1px)`,
             backgroundSize: "20px 20px",
           }}
           onWheel={handleWheel}
           onMouseDown={handlePointMouseDown}
           onMouseMove={handleCanvasMouseMove}
           onMouseUp={handleCanvasMouseUp}
-          onMouseLeave={handleCanvasMouseUp}
+          onMouseLeave={() => { handleCanvasMouseUp(); setMousePos(null); }}
         >
           <div
             ref={canvasRef}
@@ -1343,6 +1360,26 @@ export default function ShapeShaper() {
             <button onClick={undo} title="Undo (Cmd+Z)" className="flex h-7 w-7 items-center justify-center rounded text-sm text-neutral-400 hover:bg-white/10 hover:text-white transition-colors">{"\u21A9"}</button>
             <button onClick={redo} title="Redo (Cmd+Shift+Z)" className="flex h-7 w-7 items-center justify-center rounded text-sm text-neutral-400 hover:bg-white/10 hover:text-white transition-colors">{"\u21AA"}</button>
           </div>
+
+          {/* Crosshair guides + XY coordinates */}
+          {showGuides && mousePos && (
+            <>
+              <div
+                className="absolute top-0 bottom-0 w-px pointer-events-none bg-emerald-500/10"
+                style={{ left: mousePos.screen.x }}
+              />
+              <div
+                className="absolute left-0 right-0 h-px pointer-events-none bg-emerald-500/10"
+                style={{ top: mousePos.screen.y }}
+              />
+              <div
+                className="absolute text-[9px] font-mono text-emerald-500/50 pl-2 pt-1 whitespace-nowrap pointer-events-none"
+                style={{ left: mousePos.screen.x, top: mousePos.screen.y }}
+              >
+                {mousePos.canvas.x.toFixed(0)}<span className="mx-0.5 opacity-30">,</span>{mousePos.canvas.y.toFixed(0)}
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -1817,8 +1854,6 @@ export default function ShapeShaper() {
       {showEditor && (
         <CommandDock
           onOpenCommandPalette={() => { setIsCmdPaletteOpen(true); pop(); }}
-          onToggleTerminal={() => { setIsTerminalOpen(v => !v); isTerminalOpen ? slideOut() : slideIn(); }}
-          isTerminalOpen={isTerminalOpen}
           extraControls={
             <button
               onClick={downloadJson}
@@ -1918,6 +1953,8 @@ export default function ShapeShaper() {
         }}
         isMinimapCollapsed={minimapCollapsed}
         onExpandMinimap={() => setMinimapCollapsed(false)}
+        onToggleTerminal={() => { setIsTerminalOpen(v => !v); isTerminalOpen ? slideOut() : slideIn(); }}
+        isTerminalOpen={isTerminalOpen}
       />
 
       {/* CommandPalette */}

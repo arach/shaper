@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, Clock, Map, Maximize2 } from 'lucide-react';
+import { Activity, Clock, Map, Maximize2, Terminal } from 'lucide-react';
 import { PANEL_STYLES } from '../../lib/chrome';
 
 interface StatusBarProps {
@@ -19,6 +19,10 @@ interface StatusBarProps {
   onExpandMinimap?: () => void;
   /** Status label and color for the online indicator */
   status?: { label: string; color: 'emerald' | 'amber' | 'red' | 'neutral' };
+  /** Callback to toggle the terminal drawer */
+  onToggleTerminal?: () => void;
+  /** Whether the terminal is currently open */
+  isTerminalOpen?: boolean;
 }
 
 const STATUS_COLORS = {
@@ -35,6 +39,8 @@ const StatusBar: React.FC<StatusBarProps> = ({
   isMinimapCollapsed = false,
   onExpandMinimap,
   status = { label: 'READY', color: 'emerald' },
+  onToggleTerminal,
+  isTerminalOpen = false,
 }) => {
   const [time, setTime] = useState(new Date());
   const [vpCopied, setVpCopied] = useState(false);
@@ -133,6 +139,21 @@ const StatusBar: React.FC<StatusBarProps> = ({
         {right}
 
         {right && <div className="h-3 w-px bg-neutral-800" />}
+
+        {onToggleTerminal && (
+          <>
+            <button
+              onClick={onToggleTerminal}
+              className={`flex items-center gap-1.5 transition-colors ${
+                isTerminalOpen ? 'text-white' : 'text-neutral-500 hover:text-white'
+              }`}
+              title="Toggle Terminal"
+            >
+              <Terminal size={10} />
+            </button>
+            <div className="h-3 w-px bg-neutral-800" />
+          </>
+        )}
 
         <div className="flex items-center gap-1.5">
           <Activity size={10} className="text-neutral-600" />
