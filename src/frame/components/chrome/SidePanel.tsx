@@ -11,22 +11,51 @@ interface SidePanelProps {
   headerActions?: React.ReactNode;
   /** Footer content pinned to bottom (outside scroll area) */
   footer?: React.ReactNode;
+  /** Additional inline styles (for dynamic positioning) */
+  style?: React.CSSProperties;
+  /** Width of the panel */
+  width?: number;
+  /** Resize start handler */
+  onResizeStart?: (e: React.MouseEvent) => void;
   children: React.ReactNode;
 }
 
 const SidePanel: React.FC<SidePanelProps> = ({
-  side, title, isCollapsed = false, onToggleCollapse, headerActions, footer, children
+  side, title, isCollapsed = false, onToggleCollapse, headerActions, footer, style, width, onResizeStart, children
 }) => {
   if (isCollapsed) return null;
 
-  const panelClass = side === 'left' ? PANEL_STYLES.manifest : PANEL_STYLES.inspector;
   const CollapseIcon = side === 'left' ? PanelLeftClose : PanelRightClose;
+
+  // Build className manually to avoid any conflicts
+  const baseClasses = 'bg-black/95 backdrop-blur-xl border border-neutral-800/80 shadow-[0_0_30px_rgba(0,0,0,0.8),inset_0_1px_0_rgba(255,255,255,0.05)] fixed top-[48px] bottom-[28px] z-40 rounded-none border-t-0 overflow-hidden';
+  const sideSpecificClasses = side === 'left' ? 'border-l-0' : 'border-r-0';
+  const panelClass = `${baseClasses} ${sideSpecificClasses}`;
+
+  const finalStyle: React.CSSProperties = {
+    ...style,
+    // Explicitly set positioning and width via inline styles
+    position: 'fixed',
+    left: side === 'left' ? 0 : undefined,
+    right: side === 'right' ? 0 : undefined,
+    width: `${width || 280}px`
+  };
 
   return (
     <div
       data-frame-panel={side === 'left' ? 'manifest' : 'inspector'}
       className={`${panelClass} pointer-events-none select-none font-mono text-[10px] flex flex-col`}
+      style={finalStyle}
     >
+      {/* Resize handle */}
+      {onResizeStart && (
+        <div
+          className={`absolute top-0 ${side === 'left' ? 'right-0' : 'left-0'} bottom-0 w-1 cursor-ew-resize hover:bg-blue-500/20 transition-colors z-50 pointer-events-auto group`}
+          onMouseDown={onResizeStart}
+        >
+          <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-neutral-700 group-hover:bg-blue-500 transition-colors" />
+        </div>
+      )}
       {/* Top highlight */}
       <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent z-10" />
 

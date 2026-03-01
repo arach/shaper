@@ -58,16 +58,16 @@ const NavigationBar: React.FC<NavigationBarProps> = ({
 
           {/* Search / Scope filter */}
           {search && (
-            <div className="relative w-[200px] bg-white/[0.03] border border-neutral-700/50 rounded-md px-2.5 hover:border-neutral-600/60 focus-within:border-neutral-500/50 focus-within:bg-white/[0.05] transition-all duration-200">
-              <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-500" />
+            <div className="relative w-[220px] bg-white/[0.03] border border-neutral-700/50 rounded px-2.5 hover:border-neutral-600/60 focus-within:border-neutral-500/50 focus-within:bg-white/[0.05] transition-all duration-200">
+              <Search size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-500" />
               <input
                 type="text"
                 value={search.value}
                 onChange={(e) => search.onChange(e.target.value)}
                 placeholder={search.placeholder ?? 'Search...'}
                 className={`
-                  w-full h-7 pl-5 pr-6 bg-transparent text-[11px] font-mono
-                  placeholder:text-neutral-600 text-neutral-300
+                  w-full h-7 pl-5 pr-6 bg-transparent text-[10px] font-mono tracking-wider
+                  placeholder:text-neutral-600 text-neutral-400
                   focus:outline-none transition-all duration-200
                   ${isFiltered ? 'text-emerald-400' : ''}
                 `}

@@ -8,9 +8,11 @@ import {
   analyzeImage, cannyEdgeDetection,
   type ImageAnalysis,
 } from "./contour";
+import type { TraceOptions, TraceResult, TraceInfo } from "../hudson/types";
+import { DEFAULT_TRACE_OPTIONS } from "../hudson/types";
 
 type Pt = [number, number];
-type BezierCtrl = [Pt, Pt, Pt, Pt]; // [p0, c1, c2, p3]
+export type BezierCtrl = [Pt, Pt, Pt, Pt]; // [p0, c1, c2, p3]
 
 // --- Vector helpers ---
 
@@ -42,7 +44,7 @@ function normalize(v: Pt): Pt {
 
 // --- Bezier evaluation ---
 
-function bezierQ(ctrl: BezierCtrl, t: number): Pt {
+export function bezierQ(ctrl: BezierCtrl, t: number): Pt {
   const mt = 1 - t;
   const mt2 = mt * mt;
   const t2 = t * t;
@@ -233,51 +235,60 @@ function toSegments(ctrls: BezierCtrl[]): BezierSegment[] {
 
 /**
  * Main entry point: trace contour from image and fit bezier curves.
- * Automatically detects image type and adapts the extraction pipeline:
- *   - alpha/logo: threshold mask → single contour → bezier fit
- *   - illustration: threshold mask → multiple contours → bezier fit per contour
- *   - photo: Canny edge detection → multiple contours → bezier fit per contour
+ * Accepts a TraceOptions object for full control over the pipeline.
  *
  * @param src - URL/path of the image
- * @param errorTolerance - bezier fitting error (lower = more detail)
- * @param resolution - trace resolution (default auto-selected based on image type)
+ * @param options - trace pipeline configuration
  */
 export async function traceFromImage(
   src: string,
-  errorTolerance: number,
-  resolution?: number,
-): Promise<BezierSegment[][]> {
+  options: TraceOptions = DEFAULT_TRACE_OPTIONS,
+): Promise<TraceResult> {
+  const t0 = performance.now();
+
   // 1. Analyze at a small size first
   const previewData = await loadImageData(src, 256);
   const analysis: ImageAnalysis = analyzeImage(previewData);
 
-  // 2. Pick trace resolution based on image type
-  const traceRes = resolution ?? (
-    analysis.kind === "photo" ? 640 :
-    analysis.kind === "illustration" ? 512 :
-    512
-  );
+  // 2. Resolve edge detection mode
+  const edgeMode = options.edgeDetection === 'auto'
+    ? (analysis.kind === 'photo' ? 'canny' : analysis.kind === 'alpha' ? 'alpha' : 'otsu')
+    : options.edgeDetection;
 
-  // 3. Load at trace resolution
+  // 3. Pick trace resolution
+  const traceRes = options.resolution === 'auto'
+    ? (analysis.kind === "photo" ? 640 : analysis.kind === "illustration" ? 512 : 512)
+    : options.resolution;
+
+  // 4. Load at trace resolution
   const imageData = await loadImageData(src, traceRes);
-  console.log("[trace] loaded image", traceRes, "x", traceRes, "kind:", analysis.kind);
+  console.log("[trace] loaded image", traceRes, "x", traceRes, "kind:", analysis.kind, "edge:", edgeMode);
 
   const scale = 1024 / traceRes;
 
-  // 4. Choose extraction strategy
-  if (analysis.kind === "alpha" || analysis.kind === "logo") {
-    // Classic pipeline: threshold → single/few contours
-    return traceMask(imageData, traceRes, scale, errorTolerance, analysis.kind === "logo" ? 3 : 1);
+  // 5. Choose extraction strategy based on resolved edge detection
+  let strokes: BezierSegment[][];
+  if (edgeMode === 'canny') {
+    strokes = traceEdges(imageData, traceRes, scale, options, analysis);
+  } else {
+    // 'otsu', 'alpha', or any mask-based detection
+    const maxC = edgeMode === 'alpha'
+      ? Math.min(options.maxContours, 1)
+      : options.maxContours;
+    strokes = traceMask(imageData, traceRes, scale, options, maxC);
   }
 
-  if (analysis.kind === "illustration") {
-    // Threshold for main shapes + edges for details
-    const maskStrokes = await traceMask(imageData, traceRes, scale, errorTolerance, 5);
-    return maskStrokes;
-  }
+  const elapsed = performance.now() - t0;
+  const pointCount = strokes.reduce((sum, s) => sum + s.length, 0);
 
-  // Photo: use Canny edge detection
-  return traceEdges(imageData, traceRes, scale, errorTolerance, analysis);
+  const info: TraceInfo = {
+    imageKind: analysis.kind,
+    contourCount: strokes.length,
+    pointCount,
+    lastTraceMs: Math.round(elapsed),
+  };
+
+  return { strokes, info };
 }
 
 /** Threshold-based extraction (logos, alpha, illustrations) */
@@ -285,7 +296,7 @@ function traceMask(
   imageData: ImageData,
   traceRes: number,
   scale: number,
-  errorTolerance: number,
+  options: TraceOptions,
   maxContours: number,
 ): BezierSegment[][] {
   const mask = imageToMask(imageData);
@@ -295,7 +306,7 @@ function traceMask(
   if (maxContours <= 1) {
     const contour = marchingSquares(mask, traceRes, traceRes);
     if (contour.length === 0) return [];
-    return [fitContour(contour, scale, errorTolerance)].filter((s) => s.length > 0);
+    return [fitContour(contour, scale, options)].filter((s) => s.length > 0);
   }
 
   // Min length scales with resolution — filter out noise
@@ -305,7 +316,7 @@ function traceMask(
 
   const strokes: BezierSegment[][] = [];
   for (const contour of contours) {
-    const stroke = fitContour(contour, scale, errorTolerance);
+    const stroke = fitContour(contour, scale, options);
     if (stroke.length > 0) strokes.push(stroke);
   }
   return strokes;
@@ -316,7 +327,7 @@ function traceEdges(
   imageData: ImageData,
   traceRes: number,
   scale: number,
-  errorTolerance: number,
+  options: TraceOptions,
   analysis: ImageAnalysis,
 ): BezierSegment[][] {
   const { recommendedSigma, recommendedLow, recommendedHigh } = analysis;
@@ -327,33 +338,47 @@ function traceEdges(
 
   if (edgeCount === 0) return [];
 
-  // Dynamic contour count: more edges → allow more contours, but cap it
-  const maxContours = Math.min(30, Math.max(5, Math.round(edgeCount / (traceRes * 2))));
-  // Dynamic min length: larger images get a higher threshold
+  const maxContours = options.maxContours;
   const minLen = Math.max(15, traceRes * 0.03);
 
   const contours = marchingSquaresMulti(edgeMask, traceRes, traceRes, maxContours, minLen);
   console.log("[trace:edges]", contours.length, "contours from edges, maxContours:", maxContours);
 
   // For photos, use a slightly higher tolerance to keep curves smooth
-  const photoTolerance = Math.max(errorTolerance, errorTolerance * 1.2);
+  const photoOptions = { ...options, errorTolerance: Math.max(options.errorTolerance, options.errorTolerance * 1.2) };
 
   const strokes: BezierSegment[][] = [];
   for (const contour of contours) {
-    const stroke = fitContour(contour, scale, photoTolerance);
+    const stroke = fitContour(contour, scale, photoOptions);
     if (stroke.length > 0) strokes.push(stroke);
   }
   return strokes;
 }
 
 /** Fit bezier curves to a single contour polyline, scaled to canvas */
-function fitContour(contour: Pt[], scale: number, errorTolerance: number): BezierSegment[] {
+function fitContour(contour: Pt[], scale: number, options: TraceOptions): BezierSegment[] {
   const scaled: Pt[] = contour.map(([x, y]) => [x * scale, y * scale]);
 
-  const simplified = rdp(scaled, errorTolerance * 0.5);
-  if (simplified.length < 2) return [];
+  const points = options.simplification === 'rdp'
+    ? rdp(scaled, options.errorTolerance * 0.5)
+    : scaled;
+  if (points.length < 2) return [];
 
-  const fitted = fitCurve(simplified, errorTolerance);
+  if (options.curveFit === 'polyline') {
+    // Produce degenerate cubics: c1=p0, c2=p3
+    const segs: BezierSegment[] = [];
+    for (let i = 0; i < points.length - 1; i++) {
+      segs.push({
+        p0: [points[i][0], points[i][1]],
+        c1: [points[i][0], points[i][1]],
+        c2: [points[i + 1][0], points[i + 1][1]],
+        p3: [points[i + 1][0], points[i + 1][1]],
+      });
+    }
+    return segs;
+  }
+
+  const fitted = fitCurve(points, options.errorTolerance);
   if (fitted.length === 0) return [];
 
   return toSegments(fitted);

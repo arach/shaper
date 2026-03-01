@@ -2,6 +2,10 @@
   "name": "shape-tool",
   "version": "0.1.0",
   "private": true,
+  "exports": {
+    ".": "./src/index.ts",
+    "./hudson": "./src/hudson/index.ts"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -15,6 +19,7 @@
     "react-dom": "19.2.3"
   },
   "devDependencies": {
+    "@hudson/sdk": "file:../hudson/packages/hudson-sdk",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

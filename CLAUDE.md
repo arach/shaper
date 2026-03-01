@@ -12,14 +12,28 @@ pnpm lint         # ESLint
 
 ## Architecture
 
-Single-page Next.js 16 app (App Router) with one main component and two library modules.
+Next.js 16 app (App Router). The editor is being migrated from a single-file component (`page.tsx`) into a Hudson app at `src/hudson/`.
 
-### Source files
+### Shared libraries (`src/lib/`) — single source of truth
 
-- `src/app/page.tsx` — Main component. All UI, state, event handlers, and SVG rendering live here (~1100 lines). Uses React hooks extensively: `useState` for UI state, `useCallback` for handlers, `useMemo` for derived data (connection map, SVG paths, point rendering).
-- `src/app/api/save/route.ts` — POST endpoint that writes bezier + smooth JSON to `public/` directory on disk.
-- `src/lib/contour.ts` — Marching squares contour extraction, Otsu threshold, RDP simplification, image-to-mask conversion. Ported from Python (`extract_logo_primitives.py`).
-- `src/lib/bezier-fit.ts` — Schneider's cubic bezier fitting algorithm and `traceFromImage()` entry point. Ported from Python (`fit_bowtie_bezier.py`).
+- `src/lib/bezier-fit.ts` — Schneider's cubic bezier fitting + `traceFromImage()`. Accepts `TraceOptions`, returns `TraceResult`. Used by both `page.tsx` and `ShaperProvider`.
+- `src/lib/contour.ts` — Marching squares, Otsu threshold, Canny edge detection, RDP simplification.
+
+### Hudson app (`src/hudson/`) — active development
+
+- `src/hudson/index.ts` — App registration: exports `shaperApp` (HudsonApp object), tools, manifest, intents.
+- `src/hudson/ShaperProvider.tsx` — All state, handlers, and computed values in a single React context (~1400 lines). Imports trace from `@/lib/bezier-fit`.
+- `src/hudson/types.ts` — Shared types: `BezierData`, `TraceOptions`, `ProjectMeta`, etc. Also used by `src/lib/bezier-fit.ts`.
+- `src/hudson/hooks.ts` — Hudson shell hooks: commands, status, search, nav, active tool hint.
+- `src/hudson/intents.ts` — LLM/voice/search intent descriptors for command palette.
+- `src/hudson/tools/TraceTool.tsx` — Trace pipeline settings panel (tolerance, edge detection, simplification, curve fit, resolution).
+- `src/hudson/components/DropZone.tsx` — Image import drop zone with preview and trace trigger.
+- `src/hudson/HUDSON.md` — Full Hudson integration guide (contracts, patterns, conventions).
+
+### App routes (`src/app/`) — still renders at `/`
+
+- `src/app/page.tsx` — Original single-file component. Still the active route, uses its own state. Imports trace from `@/lib/bezier-fit`.
+- `src/app/api/save/route.ts` — POST endpoint shared by both `page.tsx` and `ShaperProvider`. Writes to `public/` (legacy) or `public/projects/{id}/` (Hudson projects).
 
 ### Data files (public/)
 
@@ -41,7 +55,6 @@ Single-page Next.js 16 app (App Router) with one main component and two library 
 
 ## Conventions
 
-- Single-file component pattern — `page.tsx` contains everything for now
 - Tailwind CSS for all styling (v4, via PostCSS)
 - No external UI component libraries
 - pnpm as package manager
@@ -49,3 +62,4 @@ Single-page Next.js 16 app (App Router) with one main component and two library 
 - No `alert()` or `confirm()` dialogs
 - Canvas is 1024×1024, SVG viewBox matches
 - All coordinates are in canvas space (0–1024)
+- API routes are flat under `/api/` — no per-app prefixes. Hudson apps share the host app's API namespace.

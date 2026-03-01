@@ -18,7 +18,7 @@ const TerminalDrawer: React.FC<TerminalDrawerProps> = ({
   return (
     <div
       className={`
-        fixed left-0 right-0 shadow-[0_-10px_40px_rgba(0,0,0,0.8)] transition-all duration-300 ease-in-out z-[70] flex flex-col border-t border-neutral-800 bottom-7
+        fixed left-0 right-0 bottom-0 shadow-[0_-10px_40px_rgba(0,0,0,0.8)] transition-all duration-300 ease-in-out z-[70] flex flex-col border-t border-neutral-800
         bg-black/90 backdrop-blur-xl
         ${isOpen ? 'translate-y-0 opacity-100 pointer-events-auto' : 'translate-y-full opacity-0 pointer-events-none'}
       `}

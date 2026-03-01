@@ -19,6 +19,7 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose, comman
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const selectedRef = useRef<HTMLDivElement>(null);
 
   const filteredCommands = commands.filter(cmd =>
     cmd.label.toLowerCase().includes(query.toLowerCase())
@@ -33,6 +34,10 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose, comman
   }, [isOpen]);
 
   useEffect(() => { setSelectedIndex(0); }, [query]);
+
+  useEffect(() => {
+    selectedRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [selectedIndex]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown') { e.preventDefault(); setSelectedIndex(prev => (prev + 1) % filteredCommands.length); }
@@ -62,13 +67,15 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose, comman
         </div>
 
         {/* Results */}
-        <div className="max-h-[300px] overflow-y-auto py-2">
-          {filteredCommands.length === 0 ? (
-            <div className="px-4 py-8 text-center text-neutral-600 text-xs font-mono">No matching commands</div>
-          ) : (
-            filteredCommands.map((cmd, idx) => (
+        <div className="max-h-[300px] overflow-y-auto py-2 relative">
+          <div className="pb-2">
+            {filteredCommands.length === 0 ? (
+              <div className="px-4 py-8 text-center text-neutral-600 text-xs font-mono">No matching commands</div>
+            ) : (
+              filteredCommands.map((cmd, idx) => (
               <div
                 key={cmd.id}
+                ref={idx === selectedIndex ? selectedRef : null}
                 className={`px-4 py-2.5 flex items-center gap-3 cursor-pointer transition-colors ${
                   idx === selectedIndex ? 'bg-emerald-900/20 border-l-2 border-emerald-500' : 'border-l-2 border-transparent hover:bg-white/5'
                 }`}
@@ -84,12 +91,17 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose, comman
                 )}
                 {idx === selectedIndex && <CornerDownLeft size={14} className="text-emerald-500 ml-2" />}
               </div>
-            ))
+              ))
+            )}
+          </div>
+          {/* Fade gradient at bottom when scrollable */}
+          {filteredCommands.length > 6 && (
+            <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-[#111] to-transparent pointer-events-none" />
           )}
         </div>
 
         {/* Footer */}
-        <div className="px-4 py-1.5 bg-neutral-900/50 border-t border-neutral-800 flex justify-between items-center text-[10px] text-neutral-500 font-mono">
+        <div className="px-4 py-1.5 bg-neutral-900/90 backdrop-blur-sm border-t border-neutral-800 flex justify-between items-center text-[10px] text-neutral-500 font-mono relative z-10">
           <span>Command Palette</span>
           <span>{filteredCommands.length} matches</span>
         </div>

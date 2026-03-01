@@ -44,8 +44,10 @@ const StatusBar: React.FC<StatusBarProps> = ({
 }) => {
   const [time, setTime] = useState(new Date());
   const [vpCopied, setVpCopied] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
     const timer = setInterval(() => setTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
@@ -144,12 +146,17 @@ const StatusBar: React.FC<StatusBarProps> = ({
           <>
             <button
               onClick={onToggleTerminal}
-              className={`flex items-center gap-1.5 transition-colors ${
-                isTerminalOpen ? 'text-white' : 'text-neutral-500 hover:text-white'
+              className={`flex items-center gap-1.5 px-2 py-1 rounded transition-all ${
+                isTerminalOpen
+                  ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
+                  : 'text-neutral-500 hover:text-neutral-300 hover:bg-white/5 border border-transparent'
               }`}
-              title="Toggle Terminal"
+              title="Toggle Terminal (Ctrl+`)"
             >
-              <Terminal size={10} />
+              <span className="text-[12px]">{'>'}_</span>
+              <span className="uppercase text-[9px] font-semibold tracking-wider">
+                {isTerminalOpen ? 'Console' : 'Console'}
+              </span>
             </button>
             <div className="h-3 w-px bg-neutral-800" />
           </>
@@ -164,7 +171,7 @@ const StatusBar: React.FC<StatusBarProps> = ({
 
         <div className="flex items-center gap-1.5 text-neutral-300 min-w-[60px] justify-end">
           <Clock size={10} className="text-neutral-600" />
-          <span>{time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+          <span>{mounted ? time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}</span>
         </div>
       </div>
     </div>
