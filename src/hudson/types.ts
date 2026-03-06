@@ -37,7 +37,7 @@ export interface SelectedPoint {
   pointType: PointType;
 }
 
-export type Tool = 'select' | 'pen' | 'hand';
+export type Tool = 'select' | 'pen' | 'hand' | 'eraser';
 
 export interface ProjectImage {
   url: string;
@@ -120,5 +120,5 @@ export interface ProjectMeta {
 
 export const DEFAULT_ZOOM = 0.45;
 export const MIN_ZOOM = 0.1;
-export const MAX_ZOOM = 2;
+export const MAX_ZOOM = 50;
 export const MAX_HISTORY = 100;
